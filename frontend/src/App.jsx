@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import Web3 from "web3";
 import io from "socket.io-client";
 
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || `http://${window.location.hostname}:3000`;
 const NETWORK_NAMES = { /* same as before */ };
 
 export default function MetaMaskApp() {
@@ -25,7 +25,7 @@ export default function MetaMaskApp() {
         const web3Instance = new Web3(window.ethereum);
         setWeb3(web3Instance);
 
-        const sock = io(`http://${window.location.hostname}:3000`);
+        const sock = io(BACKEND_URL);
         setSocket(sock);
 
         sock.on("connect", () =>
@@ -121,8 +121,25 @@ export default function MetaMaskApp() {
                   message: "Sign this message from backend"
                 })
               })
-                .then(res => res.json())
-                .then(data => updateStatus("socket", `Backend: ${data.message}`))
+                .then(res => {
+                  if (!res.ok) {
+                    throw new Error(`Server responded with status: ${res.status}`);
+                  }
+                  return res.text();
+                })
+                .then(text => {
+                  // Handle empty responses
+                  if (!text.trim()) {
+                    throw new Error('Empty response from server');
+                  }
+                  // Parse JSON only if there's content
+                  try {
+                    const data = JSON.parse(text);
+                    updateStatus("socket", `Backend: ${data.message}`);
+                  } catch (e) {
+                    throw new Error(`Invalid JSON response: ${e.message}`);
+                  }
+                })
                 .catch((e) =>
                   updateStatus("socket", `Backend Error: ${e.message}`)
                 )

@@ -72,15 +72,20 @@ app.post('/api/trigger-sign', (req, res) => {
         message = req.body.message;
     }
 
-    console.log(`Sending message to ${connectedClients.size} client(s): ${message}`);
+    try {
+        console.log(`Sending message to ${connectedClients.size} client(s): ${message}`);
 
-    // Broadcast to all connected clients
-    io.emit('triggerSign', { message });
+        // Broadcast to all connected clients
+        io.emit('triggerSign', { message });
 
-    return res.json({
-        success: true,
-        message: `Sign request sent to ${connectedClients.size} client(s)`
-    });
+        return res.json({
+            success: true,
+            message: `Sign request sent to ${connectedClients.size} client(s)`
+        });
+    } catch (error) {
+        console.error('Error in trigger-sign (POST):', error);
+        return res.status(500).json({ success: false, message: 'Server error', error: error.message });
+    }
 });
 
 // Fix for the frontend "Trigger Sign from Backend" button
@@ -92,16 +97,21 @@ app.get('/api/trigger-sign', (req, res) => {
         return res.status(404).json({ success: false, message: 'No clients connected' });
     }
 
-    const message = 'Please sign this message triggered via GET from the frontend at ' + new Date().toISOString();
-    console.log(`Sending message to ${connectedClients.size} client(s): ${message}`);
+    try {
+        const message = 'Please sign this message triggered via GET from the frontend at ' + new Date().toISOString();
+        console.log(`Sending message to ${connectedClients.size} client(s): ${message}`);
 
-    // Broadcast to all connected clients
-    io.emit('triggerSign', { message });
+        // Broadcast to all connected clients
+        io.emit('triggerSign', { message });
 
-    return res.json({
-        success: true,
-        message: `Sign request sent to ${connectedClients.size} client(s)`
-    });
+        return res.json({
+            success: true,
+            message: `Sign request sent to ${connectedClients.size} client(s)`
+        });
+    } catch (error) {
+        console.error('Error in trigger-sign (GET):', error);
+        return res.status(500).json({ success: false, message: 'Server error', error: error.message });
+    }
 });
 
 // Start the server
