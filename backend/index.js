@@ -67,7 +67,15 @@ io.on('connection', (socket) => {
 
         // Listen for sign message result
         socket.on('signMessageResult', (data) => {
-            console.log(`Sign message result from ${socket.id}:`, data);
+            console.log(`Sign message result from ${socket.id}:`);
+            console.log(`- Account: ${data.account}`);
+            console.log(`- Message: ${data.message}`);
+            console.log(`- Signature: ${data.signature?.substring(0, 20)}...${data.signature?.substring(data.signature.length - 10)}`);
+
+            // Acknowledge receipt of signature
+            socket.emit('serverMessage', {
+                message: `Signature received for message: "${data.message.substring(0, 30)}${data.message.length > 30 ? '...' : ''}"`
+            });
         });
     } else {
         console.log(`Duplicate connection attempt from ${socket.id}`);
@@ -114,13 +122,19 @@ app.post('/api/trigger-sign', (req, res) => {
         const clientIds = Array.from(connectedClients.keys()).join(', ');
         console.log(`Client IDs receiving message: ${clientIds}`);
 
+        // Track message delivery acknowledgement
+        const messageId = Date.now().toString();
+        const messageData = { message, id: messageId };
+
         // Broadcast to all connected clients
-        io.emit('triggerSign', { message });
+        io.emit('triggerSign', messageData);
+        console.log(`Message ID ${messageId} broadcast to all clients`);
 
         return res.json({
             success: true,
             message: `Sign request sent to ${connectedClients.size} client(s)`,
-            clients: Array.from(connectedClients.keys())
+            clients: Array.from(connectedClients.keys()),
+            messageId
         });
     } catch (error) {
         console.error('Error in trigger-sign (POST):', error);
@@ -145,13 +159,19 @@ app.get('/api/trigger-sign', (req, res) => {
         const clientIds = Array.from(connectedClients.keys()).join(', ');
         console.log(`Client IDs receiving message: ${clientIds}`);
 
+        // Track message delivery acknowledgement
+        const messageId = Date.now().toString();
+        const messageData = { message, id: messageId };
+
         // Broadcast to all connected clients
-        io.emit('triggerSign', { message });
+        io.emit('triggerSign', messageData);
+        console.log(`Message ID ${messageId} broadcast to all clients`);
 
         return res.json({
             success: true,
             message: `Sign request sent to ${connectedClients.size} client(s)`,
-            clients: Array.from(connectedClients.keys())
+            clients: Array.from(connectedClients.keys()),
+            messageId
         });
     } catch (error) {
         console.error('Error in trigger-sign (GET):', error);

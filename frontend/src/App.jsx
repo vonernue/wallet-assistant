@@ -23,54 +23,75 @@ export default function MetaMaskApp() {
     let sock = null;
     
     const init = async () => {
-      if (window.ethereum) {
-        const web3Instance = new Web3(window.ethereum);
-        setWeb3(web3Instance);
+      try {
+        if (window.ethereum) {
+          console.log("MetaMask detected:", window.ethereum);
+          const web3Instance = new Web3(window.ethereum);
+          setWeb3(web3Instance);
 
-        // Create a socket connection only if we don't already have one
-        if (!socket) {
-          console.log("Creating new socket connection");
-          sock = io(BACKEND_URL, {
-            reconnectionAttempts: 3,
-            transports: ['websocket'],
-            // Disable auto connect to have more control
-            autoConnect: false
-          });
-          
-          // Set up event listeners before connecting
-          sock.on("connect", () => {
-            console.log(`Socket connected: ${sock.id}`);
-            updateStatus("socket", `Connected (ID: ${sock.id})`);
-          });
-          
-          sock.on("disconnect", () =>
-            updateStatus("socket", "Disconnected")
-          );
-          
-          sock.on("serverMessage", (data) =>
-            updateStatus("socket", `Server: ${data.message}`)
-          );
-          
-          sock.on("triggerSign", async (data) => {
-            updateStatus("socket", `Received sign trigger: ${data.message}`);
-            await signMessage(data.message);
-          });
-          
-          // Now connect
-          sock.connect();
-          setSocket(sock);
+          // Create a socket connection only if we don't already have one
+          if (!socket) {
+            console.log("Creating new socket connection");
+            sock = io(BACKEND_URL, {
+              reconnectionAttempts: 3,
+              transports: ['websocket'],
+              // Disable auto connect to have more control
+              autoConnect: false
+            });
+            
+            // Set up event listeners before connecting
+            sock.on("connect", () => {
+              console.log(`Socket connected: ${sock.id}`);
+              updateStatus("socket", `Connected (ID: ${sock.id})`);
+            });
+            
+            sock.on("disconnect", () =>
+              updateStatus("socket", "Disconnected")
+            );
+            
+            sock.on("serverMessage", (data) =>
+              updateStatus("socket", `Server: ${data.message}`)
+            );
+            
+            sock.on("triggerSign", async (data) => {
+              const triggerMessage = `Received sign trigger: ${data.message || data.id}`;
+              console.log(triggerMessage);
+              updateStatus("socket", triggerMessage);
+              updateStatus("sign", `🔄 Preparing to sign: "${data.message}"`);
+              
+              // Small delay to ensure UI updates before starting the sign process
+              setTimeout(() => signMessage(data.message), 100);
+            });
+            
+            // Now connect
+            sock.connect();
+            setSocket(sock);
+          }
+
+          try {
+            const chain = await web3Instance.eth.getChainId();
+            console.log("Chain ID detected:", chain);
+            setChainId(chain);
+
+            if (window.ethereum.selectedAddress) {
+              const accounts = await web3Instance.eth.requestAccounts();
+              console.log("Connected accounts:", accounts);
+              setAccount(accounts[0]);
+            }
+          } catch (err) {
+            console.error("Error getting chain or account:", err);
+            updateStatus("sign", `❌ Wallet error: ${err.message}`);
+          }
+
+          window.ethereum.on("chainChanged", () => window.location.reload());
+          window.ethereum.on("accountsChanged", () => window.location.reload());
+        } else {
+          console.error("MetaMask not detected!");
+          updateStatus("sign", "❌ MetaMask not detected");
         }
-
-        const chain = await web3Instance.eth.getChainId();
-        setChainId(chain);
-
-        if (window.ethereum.selectedAddress) {
-          const accounts = await web3Instance.eth.requestAccounts();
-          setAccount(accounts[0]);
-        }
-
-        window.ethereum.on("chainChanged", () => window.location.reload());
-        window.ethereum.on("accountsChanged", () => window.location.reload());
+      } catch (err) {
+        console.error("Error in init function:", err);
+        updateStatus("sign", `❌ Initialization error: ${err.message}`);
       }
     };
 
@@ -87,28 +108,123 @@ export default function MetaMaskApp() {
   }, [socket]); // Dependency on socket state to avoid creating multiple connections
 
   const connectWallet = async () => {
-    if (!window.ethereum) return alert("Install MetaMask");
-    const accounts = await window.ethereum.request({
-      method: "eth_requestAccounts",
-    });
-    setAccount(accounts[0]);
+    try {
+      if (!window.ethereum) {
+        const errorMsg = "MetaMask not installed!";
+        updateStatus("sign", `❌ ${errorMsg}`);
+        alert(errorMsg);
+        return;
+      }
+      
+      console.log("Requesting accounts from MetaMask...");
+      const accounts = await window.ethereum.request({
+        method: "eth_requestAccounts",
+      });
+      
+      console.log("Accounts received:", accounts);
+      if (accounts && accounts.length > 0) {
+        setAccount(accounts[0]);
+        updateStatus("sign", `✅ Wallet connected: ${accounts[0].substring(0, 6)}...${accounts[0].substring(accounts[0].length - 4)}`);
+      } else {
+        updateStatus("sign", "❌ No accounts received from MetaMask");
+      }
+    } catch (err) {
+      console.error("Error connecting wallet:", err);
+      updateStatus("sign", `❌ Connection error: ${err.message}`);
+    }
   };
 
   const signMessage = async (msg = "Please sign this message.") => {
     console.log("Signing message:", msg);
-    if (!web3 || !account) return;
+    updateStatus("sign", `⏳ Requesting signature for: "${msg}"`);
+    
     try {
+      // Check if MetaMask is available
+      if (!window.ethereum) {
+        const errorMsg = "MetaMask not installed!";
+        console.error(errorMsg);
+        updateStatus("sign", `❌ ${errorMsg}`);
+        return;
+      }
+      
+      // Check if web3 is initialized
+      if (!web3) {
+        const errorMsg = "Web3 not initialized";
+        console.error(errorMsg);
+        updateStatus("sign", `❌ ${errorMsg}`);
+        return;
+      }
+      
+      // Check if account is connected
+      if (!account) {
+        console.log("No account connected, attempting to connect...");
+        updateStatus("sign", "⏳ No account connected, connecting now...");
+        
+        try {
+          const accounts = await window.ethereum.request({
+            method: "eth_requestAccounts",
+          });
+          
+          if (accounts && accounts.length > 0) {
+            setAccount(accounts[0]);
+            updateStatus("sign", `✅ Wallet connected: ${accounts[0].substring(0, 6)}...${accounts[0].substring(accounts[0].length - 4)}`);
+          } else {
+            throw new Error("No accounts received");
+          }
+        } catch (error) {
+          console.error("Failed to connect wallet:", error);
+          updateStatus("sign", `❌ Failed to connect wallet: ${error.message}`);
+          return;
+        }
+      }
+      
+      // Convert message to hex format
+      console.log("Converting message to hex...");
       const hexMsg = web3.utils.utf8ToHex(msg);
-      const signature = await web3.eth.personal.sign(hexMsg, account, "");
-      updateStatus("sign", `✅ Signature: ${signature}`);
-      socket?.emit("signMessageResult", {
-        account,
-        message: msg,
-        signature,
-        timestamp: new Date().toISOString(),
+      console.log("Hex message:", hexMsg);
+      
+      updateStatus("sign", `🔐 MetaMask popup should appear...`);
+      
+      // Try to sign the message
+      console.log("Requesting signature from account:", account);
+      
+      // Use direct ethereum.request instead of web3.eth.personal.sign for more reliability
+      const signature = await window.ethereum.request({
+        method: 'personal_sign',
+        params: [hexMsg, account]
       });
+      
+      // Success! We got a signature
+      console.log("Raw signature received:", signature);
+      const successMsg = `✅ Signature: ${signature.substring(0, 20)}...${signature.substring(signature.length - 10)}`;
+      console.log("Signing successful:", successMsg);
+      updateStatus("sign", successMsg);
+      
+      // Emit to server
+      if (socket && socket.connected) {
+        console.log("Sending signature to server");
+        socket.emit("signMessageResult", {
+          account,
+          message: msg,
+          signature,
+          timestamp: new Date().toISOString(),
+        });
+      } else {
+        console.error("Socket not connected, can't send signature");
+        updateStatus("sign", "⚠️ Socket not connected, signature not sent to server");
+      }
     } catch (err) {
-      updateStatus("sign", `❌ Error: ${err.message}`);
+      // Handle specific MetaMask errors
+      if (err.code === 4001) {
+        // User rejected the request
+        const rejectMsg = "❌ MetaMask signature request was rejected by user";
+        console.error(rejectMsg);
+        updateStatus("sign", rejectMsg);
+      } else {
+        const errorMsg = `❌ Error: ${err.message}`;
+        console.error("Signing error:", err);
+        updateStatus("sign", errorMsg);
+      }
     }
   };
 

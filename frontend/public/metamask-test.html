@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MetaMask Test</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        
+        button {
+            background-color: #0070f3;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-right: 10px;
+            margin-bottom: 10px;
+        }
+        
+        button:hover {
+            background-color: #0051a2;
+        }
+        
+        #log {
+            background-color: #f1f1f1;
+            padding: 16px;
+            border-radius: 4px;
+            margin-top: 20px;
+            font-family: monospace;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        
+        .log-entry {
+            margin-bottom: 8px;
+            border-bottom: 1px solid #ddd;
+            padding-bottom: 8px;
+        }
+        
+        .success {
+            color: green;
+        }
+        
+        .error {
+            color: red;
+        }
+        
+        .info {
+            color: blue;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>MetaMask Connection Test</h1>
+    <p>Simple page to test MetaMask without React/Web3.js dependencies</p>
+
+    <div>
+        <button id="checkMetaMask">Check MetaMask</button>
+        <button id="connectWallet">Connect Wallet</button>
+        <button id="signMessage">Sign Message</button>
+    </div>
+
+    <div id="log"></div>
+
+    <script>
+        // Helper function for logging
+        function log(message, type = 'info') {
+            const logEl = document.getElementById('log');
+            const entry = document.createElement('div');
+            entry.classList.add('log-entry', type);
+            entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            logEl.appendChild(entry);
+            logEl.scrollTop = logEl.scrollHeight;
+            console.log(message);
+        }
+
+        // Check if MetaMask is available
+        document.getElementById('checkMetaMask').addEventListener('click', () => {
+            if (window.ethereum) {
+                log('MetaMask is installed! ✓', 'success');
+                log(`Provider: ${window.ethereum.isMetaMask ? 'MetaMask' : 'Unknown provider'}`, 'info');
+                log(`Is Connected: ${window.ethereum.selectedAddress ? 'Yes' : 'No'}`, 'info');
+                if (window.ethereum.selectedAddress) {
+                    log(`Selected address: ${window.ethereum.selectedAddress}`, 'info');
+                }
+            } else {
+                log('MetaMask is not installed! ✗', 'error');
+            }
+        });
+
+        // Connect to MetaMask
+        document.getElementById('connectWallet').addEventListener('click', async() => {
+            if (!window.ethereum) {
+                log('MetaMask is not installed! Please install MetaMask first.', 'error');
+                return;
+            }
+
+            try {
+                log('Requesting account access...', 'info');
+                const accounts = await window.ethereum.request({
+                    method: 'eth_requestAccounts'
+                });
+                log(`Connected to account: ${accounts[0]}`, 'success');
+            } catch (error) {
+                log(`Error connecting to MetaMask: ${error.message}`, 'error');
+            }
+        });
+
+        // Sign a message with MetaMask
+        document.getElementById('signMessage').addEventListener('click', async() => {
+            if (!window.ethereum) {
+                log('MetaMask is not installed! Please install MetaMask first.', 'error');
+                return;
+            }
+
+            if (!window.ethereum.selectedAddress) {
+                log('No account connected. Please connect your wallet first.', 'error');
+                return;
+            }
+
+            const message = "Hello, this is a test message: " + new Date().toISOString();
+            try {
+                log(`Preparing to sign message: "${message}"`, 'info');
+
+                // Convert message to hex (we'll use a simple function instead of web3.js)
+                const msgHex = '0x' + Array.from(message).map(c =>
+                    c.charCodeAt(0).toString(16).padStart(2, '0')
+                ).join('');
+
+                log('Requesting signature...', 'info');
+                log('MetaMask popup should appear now...', 'info');
+
+                const signature = await window.ethereum.request({
+                    method: 'personal_sign',
+                    params: [msgHex, window.ethereum.selectedAddress]
+                });
+
+                log(`Message signed successfully!`, 'success');
+                log(`Signature: ${signature}`, 'success');
+            } catch (error) {
+                if (error.code === 4001) {
+                    log('User denied signature request', 'error');
+                } else {
+                    log(`Error signing message: ${error.message}`, 'error');
+                }
+            }
+        });
+
+        // Log initial state
+        window.addEventListener('DOMContentLoaded', () => {
+            log('Page loaded. Click buttons above to test MetaMask integration.', 'info');
+            if (window.ethereum) {
+                log('MetaMask detected', 'info');
+            } else {
+                log('MetaMask not detected', 'error');
+            }
+        });
+    </script>
+</body>
+
+</html>
