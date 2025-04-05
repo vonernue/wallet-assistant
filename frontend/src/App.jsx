@@ -20,27 +20,46 @@ export default function MetaMaskApp() {
   };
 
   useEffect(() => {
+    let sock = null;
+    
     const init = async () => {
       if (window.ethereum) {
         const web3Instance = new Web3(window.ethereum);
         setWeb3(web3Instance);
 
-        const sock = io(BACKEND_URL);
-        setSocket(sock);
-
-        sock.on("connect", () =>
-          updateStatus("socket", `Connected (ID: ${sock.id})`)
-        );
-        sock.on("disconnect", () =>
-          updateStatus("socket", "Disconnected")
-        );
-        sock.on("serverMessage", (data) =>
-          updateStatus("socket", `Server: ${data.message}`)
-        );
-        sock.on("triggerSign", async (data) => {
-          updateStatus("socket", `Received sign trigger: ${data.message}`);
-          await signMessage(data.message);
-        });
+        // Create a socket connection only if we don't already have one
+        if (!socket) {
+          console.log("Creating new socket connection");
+          sock = io(BACKEND_URL, {
+            reconnectionAttempts: 3,
+            transports: ['websocket'],
+            // Disable auto connect to have more control
+            autoConnect: false
+          });
+          
+          // Set up event listeners before connecting
+          sock.on("connect", () => {
+            console.log(`Socket connected: ${sock.id}`);
+            updateStatus("socket", `Connected (ID: ${sock.id})`);
+          });
+          
+          sock.on("disconnect", () =>
+            updateStatus("socket", "Disconnected")
+          );
+          
+          sock.on("serverMessage", (data) =>
+            updateStatus("socket", `Server: ${data.message}`)
+          );
+          
+          sock.on("triggerSign", async (data) => {
+            updateStatus("socket", `Received sign trigger: ${data.message}`);
+            await signMessage(data.message);
+          });
+          
+          // Now connect
+          sock.connect();
+          setSocket(sock);
+        }
 
         const chain = await web3Instance.eth.getChainId();
         setChainId(chain);
@@ -56,7 +75,16 @@ export default function MetaMaskApp() {
     };
 
     init();
-  }, []);
+
+    // Cleanup function to disconnect socket when component unmounts
+    return () => {
+      if (sock) {
+        console.log("Cleaning up socket connection");
+        sock.disconnect();
+        sock.removeAllListeners();
+      }
+    };
+  }, [socket]); // Dependency on socket state to avoid creating multiple connections
 
   const connectWallet = async () => {
     if (!window.ethereum) return alert("Install MetaMask");
