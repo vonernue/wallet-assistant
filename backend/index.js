@@ -1,8 +1,11 @@
-const express = require('express');
-const http = require('http');
-const { Server } = require('socket.io');
-const cors = require('cors');
-const path = require('path');
+import express from 'express';
+import http from 'http';
+import { Server } from 'socket.io';
+import cors from 'cors';
+import path from 'path';
+import { experimental_createMCPClient, generateText } from 'ai';
+import { Experimental_StdioMCPTransport } from 'ai/mcp-stdio';
+import { openai } from '@ai-sdk/openai';
 
 // Create Express app
 const app = express();
@@ -102,6 +105,40 @@ app.get('/api/trigger-sign', (req, res) => {
         success: true,
         message: `Sign request sent to ${connectedClients.size} client(s)`
     });
+});
+
+app.post('/api/completion', async (req, res) => {
+    const { prompt } = await req.json();
+
+    try {
+      // Initialize an MCP client to connect to a `stdio` MCP server:
+    //   const transport = new Experimental_StdioMCPTransport({
+    //     command: 'node',
+    //     args: ['src/stdio/dist/server.js'],
+    //   });
+    //   const stdioClient = await experimental_createMCPClient({
+    //     transport,
+    //   });
+
+    //   const toolSetOne = await stdioClient.tools();
+      const tools = {
+        // ...toolSetOne, // note: this approach causes subsequent tool sets to override tools with the same name
+      };
+  
+      const response = await streamText({
+        model: openai('gpt-4o'),
+        tools,
+        prompt,
+        // When streaming, the client should be closed after the response is finished:
+        onFinish: async () => {
+          await stdioClient.close();
+        },
+      });
+  
+      return response.toDataStreamResponse();
+    } catch (error) {
+      return new Response('Internal Server Error', { status: 500 });
+    }
 });
 
 // Start the server
