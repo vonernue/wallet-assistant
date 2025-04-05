@@ -19,54 +19,94 @@ export default function MetaMaskApp() {
     }));
   };
 
+  // Socket connection management - separate from MetaMask initialization
   useEffect(() => {
     let sock = null;
     
-    const init = async () => {
+    const setupSocket = () => {
+      console.log("Setting up socket connection to:", BACKEND_URL);
+      updateStatus("socket", `Attempting connection to ${BACKEND_URL}...`);
+      
+      // Create socket with retry options
+      sock = io(BACKEND_URL, {
+        reconnectionAttempts: 5,
+        transports: ['websocket', 'polling'], // Try WebSocket first, fallback to polling
+        timeout: 10000, // Increase timeout for connection attempts
+        autoConnect: false // Don't connect until we set up handlers
+      });
+      
+      // Debug events
+      sock.on("connect_error", (err) => {
+        console.error("Socket connection error:", err);
+        updateStatus("socket", `Connection error: ${err.message}`);
+      });
+      
+      sock.on("connect_timeout", () => {
+        console.error("Socket connection timeout");
+        updateStatus("socket", "Connection timeout");
+      });
+      
+      sock.on("reconnect_attempt", (attempt) => {
+        console.log(`Socket reconnection attempt ${attempt}`);
+        updateStatus("socket", `Reconnection attempt ${attempt}`);
+      });
+      
+      // Success events
+      sock.on("connect", () => {
+        console.log(`Socket connected: ${sock.id}`);
+        updateStatus("socket", `Connected (ID: ${sock.id})`);
+      });
+      
+      sock.on("disconnect", (reason) => {
+        console.log(`Socket disconnected: ${reason}`);
+        updateStatus("socket", `Disconnected: ${reason}`);
+      });
+      
+      sock.on("serverMessage", (data) => {
+        console.log("Server message:", data);
+        updateStatus("socket", `Server: ${data.message}`);
+      });
+      
+      sock.on("triggerSign", async (data) => {
+        const triggerMessage = `Received sign trigger: ${data.message || data.id}`;
+        console.log(triggerMessage);
+        updateStatus("socket", triggerMessage);
+        updateStatus("sign", `🔄 Preparing to sign: "${data.message}"`);
+        
+        // Small delay to ensure UI updates before starting the sign process
+        setTimeout(() => signMessage(data.message), 100);
+      });
+      
+      // Now connect
+      sock.connect();
+      setSocket(sock);
+    };
+    
+    setupSocket();
+    
+    // Cleanup function to disconnect socket when component unmounts
+    return () => {
+      if (sock) {
+        console.log("Cleaning up socket connection");
+        sock.disconnect();
+        sock.removeAllListeners();
+      }
+    };
+  }, []); // Empty dependency array means this runs once on mount
+
+  // Separate effect for MetaMask initialization
+  useEffect(() => {
+    const initMetaMask = async () => {
       try {
         if (window.ethereum) {
           console.log("MetaMask detected:", window.ethereum);
           const web3Instance = new Web3(window.ethereum);
-          setWeb3(web3Instance);
-
-          // Create a socket connection only if we don't already have one
-          if (!socket) {
-            console.log("Creating new socket connection");
-            sock = io(BACKEND_URL, {
-              reconnectionAttempts: 3,
-              transports: ['websocket'],
-              // Disable auto connect to have more control
-              autoConnect: false
-            });
-            
-            // Set up event listeners before connecting
-            sock.on("connect", () => {
-              console.log(`Socket connected: ${sock.id}`);
-              updateStatus("socket", `Connected (ID: ${sock.id})`);
-            });
-            
-            sock.on("disconnect", () =>
-              updateStatus("socket", "Disconnected")
-            );
-            
-            sock.on("serverMessage", (data) =>
-              updateStatus("socket", `Server: ${data.message}`)
-            );
-            
-            sock.on("triggerSign", async (data) => {
-              const triggerMessage = `Received sign trigger: ${data.message || data.id}`;
-              console.log(triggerMessage);
-              updateStatus("socket", triggerMessage);
-              updateStatus("sign", `🔄 Preparing to sign: "${data.message}"`);
-              
-              // Small delay to ensure UI updates before starting the sign process
-              setTimeout(() => signMessage(data.message), 100);
-            });
-            
-            // Now connect
-            sock.connect();
-            setSocket(sock);
-          }
+          const accounts = await window.ethereum.request({
+            method: 'eth_requestAccounts'
+          });
+          setAccount(accounts[0]);
+          console.log(`accounts[0]: ${accounts[0]}`);
+          console.log(`account: ${account}`);
 
           try {
             const chain = await web3Instance.eth.getChainId();
@@ -95,17 +135,8 @@ export default function MetaMaskApp() {
       }
     };
 
-    init();
-
-    // Cleanup function to disconnect socket when component unmounts
-    return () => {
-      if (sock) {
-        console.log("Cleaning up socket connection");
-        sock.disconnect();
-        sock.removeAllListeners();
-      }
-    };
-  }, [socket]); // Dependency on socket state to avoid creating multiple connections
+    initMetaMask();
+  }, []); // Empty dependency array means this runs once on mount
 
   const connectWallet = async () => {
     try {
@@ -148,12 +179,12 @@ export default function MetaMaskApp() {
       }
       
       // Check if web3 is initialized
-      if (!web3) {
-        const errorMsg = "Web3 not initialized";
-        console.error(errorMsg);
-        updateStatus("sign", `❌ ${errorMsg}`);
-        return;
-      }
+      // if (!web3) {
+      //   const errorMsg = "Web3 not initialized";
+      //   console.error(errorMsg);
+      //   updateStatus("sign", `❌ ${errorMsg}`);
+      //   return;
+      // }
       
       // Check if account is connected
       if (!account) {
@@ -255,7 +286,9 @@ export default function MetaMaskApp() {
             </span>
           </div>
           <Button
-            onClick={() =>
+            onClick={() => {
+              updateStatus("socket", "Requesting backend sign trigger...");
+              
               fetch(`${BACKEND_URL}/api/trigger-sign`, {
                 method: "POST",
                 headers: {
@@ -279,7 +312,7 @@ export default function MetaMaskApp() {
                   // Parse JSON only if there's content
                   try {
                     const data = JSON.parse(text);
-                    updateStatus("socket", `Backend: ${data.message}`);
+                    updateStatus("socket", `Backend: ${data.message || "Request sent"}`);
                   } catch (e) {
                     throw new Error(`Invalid JSON response: ${e.message}`);
                   }
@@ -287,7 +320,7 @@ export default function MetaMaskApp() {
                 .catch((e) =>
                   updateStatus("socket", `Backend Error: ${e.message}`)
                 )
-            }
+            }}
           >
             Trigger Sign from Backend
           </Button>
